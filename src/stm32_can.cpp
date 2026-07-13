@@ -38,8 +38,6 @@
 #pragma GCC diagnostic pop
 
 #define MAX_INTERFACES        2
-#define IDS_PER_BANK          4
-#define EXT_IDS_PER_BANK      2
 
 #ifndef CAN_PERIPH_SPEED
 #define CAN_PERIPH_SPEED 36
@@ -285,105 +283,19 @@ void Stm32Can::HandleTx()
 
 /****************** Private methods and ISRs ********************/
 
-void Stm32Can::SetFilterBank(int& idIndex, int& filterId, uint16_t* idList)
-{
-   can_filter_id_list_16bit_init(
-         filterId,
-         idList[0] << 5, //left align
-         idList[1] << 5,
-         idList[2] << 5,
-         idList[3] << 5,
-         filterId & 1,
-         true);
-   idIndex = 0;
-   filterId++;
-   idList[0] = idList[1] = idList[2] = idList[3] = 0;
-}
-
-void Stm32Can::SetFilterBankMask(int& idIndex, int& filterId, uint16_t* idMaskList)
-{
-   can_filter_id_mask_16bit_init(
-         filterId,
-         idMaskList[0] << 5, //id 1
-         idMaskList[1] << 5, //mask 1
-         idMaskList[2] << 5, //id 2
-         idMaskList[3] << 5, //mask 2
-         filterId & 1,
-         true);
-   idIndex = 0;
-   filterId++;
-   idMaskList[0] = idMaskList[2] = 0;
-   idMaskList[1] = idMaskList[3] = 0x7FF;
-}
-
-void Stm32Can::SetFilterBank29(int& idIndex, int& filterId, uint32_t* idList)
-{
-   can_filter_id_list_32bit_init(
-         filterId,
-         (idList[0] << 3) | 0x4, //filter extended
-         (idList[1] << 3) | 0x4,
-         filterId & 1,
-         true);
-   idIndex = 0;
-   filterId++;
-   idList[0] = idList[1] = 0;
-}
+/* SetFilterBank, SetFilterBankMask, SetFilterBank29 and PackFilters are
+ * defined in canfilterpack.cpp, split out of this file because they contain
+ * no hardware register access (unlike the rest of this file, which pulls in
+ * ARM-specific inline asm via cortex.h through Send()) and so can be
+ * exercised by the host test suite. */
 
 void Stm32Can::ConfigureFilters()
 {
-   uint16_t idList[IDS_PER_BANK] = { 0, 0, 0, 0 };
-   uint16_t idMaskList[IDS_PER_BANK] = { 0, 0x7FF, 0, 0x7FF };
-   uint32_t extIdList[EXT_IDS_PER_BANK] = { 0, 0 };
-   int idIndex = 0, idMaskIndex = 0, extIdIndex = 0;
    int filterId = canDev == CAN1 ? 0 : ((CAN_FMR(CAN2) >> 8) & 0x3F);
 
    CAN_FA1R(canDev) = 0; //Disable all filters
 
-   for (int i = 0; i < nextUserMessageIndex; i++)
-   {
-      if (userIds[i] > 0x7ff)
-      {
-         extIdList[extIdIndex] = userIds[i] & 0x1FFFFFFF;
-         extIdIndex++;
-      }
-      else if (userMasks[i] != 0)
-      {
-         idMaskList[idMaskIndex++] = userIds[i];
-         idMaskList[idMaskIndex++] = userMasks[i];
-      }
-      else
-      {
-         idList[idIndex] = userIds[i];
-         idIndex++;
-      }
-
-      if (idIndex == IDS_PER_BANK)
-      {
-         SetFilterBank(idIndex, filterId, idList);
-      }
-      if (idMaskIndex == EXT_IDS_PER_BANK)
-      {
-         SetFilterBankMask(idMaskIndex, filterId, idMaskList);
-      }
-      if (extIdIndex == EXT_IDS_PER_BANK)
-      {
-         SetFilterBank29(extIdIndex, filterId, extIdList);
-      }
-   }
-
-   //loop terminates before adding last set of filters
-   if (idIndex > 0)
-   {
-      SetFilterBank(idIndex, filterId, idList);
-   }
-   if (idMaskIndex > 0)
-   {
-      SetFilterBankMask(extIdIndex, filterId, idMaskList);
-   }
-   if (extIdIndex > 0)
-   {
-      SetFilterBank29(extIdIndex, filterId, extIdList);
-   }
+   PackFilters(userIds, userMasks, nextUserMessageIndex, filterId);
 }
 
 /* Interrupt service routines */

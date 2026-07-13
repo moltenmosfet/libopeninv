@@ -34,6 +34,11 @@ public:
    void HandleTx();
    void HandleMessage(int fifo);
    static Stm32Can* GetInterface(int index);
+   /* Packs registered CAN IDs/masks into filter banks. Pure logic, no hardware
+    * register access, defined in canfilterpack.cpp (kept apart from the
+    * hardware-touching parts of this class so it is host-testable). Public
+    * so the host test suite can drive it directly. */
+   static void PackFilters(const uint32_t* ids, const uint32_t* masks, int count, int filterId);
 
 private:
    struct SENDBUFFER
@@ -49,9 +54,9 @@ private:
    uint32_t canDev;
 
    void ConfigureFilters();
-   void SetFilterBank(int& idIndex, int& filterId, uint16_t* idList);
-   void SetFilterBankMask(int& idIndex, int& filterId, uint16_t* idMaskList);
-   void SetFilterBank29(int& idIndex, int& filterId, uint32_t* idList);
+   static void SetFilterBank(int& idIndex, int& filterId, uint16_t* idList);
+   static void SetFilterBankMask(int& idIndex, int& filterId, uint16_t* idMaskList);
+   static void SetFilterBank29(int& idIndex, int& filterId, uint32_t* idList);
 
    static Stm32Can* interfaces[];
 };
