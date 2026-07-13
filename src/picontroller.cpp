@@ -29,7 +29,10 @@ int32_t PiControllerGeneric<s32fp, int32_t>::Run(s32fp curVal, int32_t feedForwa
    esum = MIN(esum, maxSum);
    esum = MAX(esum, minSum);
 
-   int32_t y = feedForward + FP_TOINT(err * kp + (esum / frequency) * ki);
+   // Integrate in 64-bit: dividing esum by frequency before multiplying by ki
+   // (as the naive form does) quantises the I-term to ki>>5-digit steps.
+   int32_t iTerm = (int32_t)(((int64_t)esum * ki) / frequency);
+   int32_t y = feedForward + FP_TOINT(err * kp + iTerm);
    int32_t ylim = MAX(y, minY);
    ylim = MIN(ylim, maxY);
 
@@ -46,8 +49,8 @@ float PiControllerGeneric<float, float>::Run(float curVal, float feedForward)
    esum = MIN(esum, maxSum);
    esum = MAX(esum, minSum);
 
-   int32_t y = feedForward + err * kp + (esum / frequency) * ki;
-   int32_t ylim = MAX(y, minY);
+   float y = feedForward + err * kp + (esum / frequency) * ki;
+   float ylim = MAX(y, minY);
    ylim = MIN(ylim, maxY);
 
    return ylim;
@@ -72,8 +75,12 @@ void PiControllerGeneric<s32fp, int32_t>::SetIntegralGain(int32_t ki)
 
     if (ki != 0)
     {
-       minSum = FP_FROMINT((minY * frequency) / ABS(ki));
-       maxSum = FP_FROMINT((maxY * frequency) / ABS(ki));
+       // Compute the windup bounds in 64-bit and saturate: for small ki the
+       // FP_FROMINT (<<5) overflowed int32, producing sign-flipped garbage.
+       int64_t minS = (((int64_t)minY * frequency) / ABS(ki)) << FRAC_DIGITS;
+       int64_t maxS = (((int64_t)maxY * frequency) / ABS(ki)) << FRAC_DIGITS;
+       minSum = minS < INT32_MIN ? INT32_MIN : (minS > INT32_MAX ? INT32_MAX : minS);
+       maxSum = maxS < INT32_MIN ? INT32_MIN : (maxS > INT32_MAX ? INT32_MAX : maxS);
     }
 }
 
