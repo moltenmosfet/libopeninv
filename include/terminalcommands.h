@@ -37,6 +37,7 @@ class TerminalCommands
       static void SetCanMap(CanMap* m) { canMap = m; }
       static void EnableSaving() { saveEnabled = true; }
       static void DisableSaving() { saveEnabled = false; }
+      static bool IsSaveEnabled() { return saveEnabled; }
 
    protected:
 
