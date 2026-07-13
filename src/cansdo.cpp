@@ -65,8 +65,11 @@ void CanSdo::HandleClear()
       canHardware->RegisterUserMessage(SDO_REP_ID_BASE + remoteNodeId);
 }
 
-void CanSdo::HandleRx(uint32_t canId, uint32_t data[2], uint8_t)
+void CanSdo::HandleRx(uint32_t canId, uint32_t data[2], uint8_t dlc)
 {
+   if (dlc < 8) //short frame -- data[] would contain stale mailbox bytes
+      return;
+
    if (canId == (SDO_REQ_ID_BASE + nodeId)) //SDO request
    {
       SdoFrame *sdo = (SdoFrame*)data;
