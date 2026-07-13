@@ -29,7 +29,7 @@ class FOC
       static void ParkClarke(s32fp il1, s32fp il2);
       static int32_t GetQLimit(int32_t maxVd);
       static int32_t GetTotalVoltage(int32_t ud, int32_t uq);
-      static void InvParkClarke(int32_t ud, int32_t uq);
+      static void InvParkClarke(int32_t ud, int32_t uq, int32_t dtcomp = 0);
       static void Mtpa(float is, float& idref, float& iqref);
       static void SetMotorParameters(float lqminusld, float fluxLinkage);
       static int32_t GetMaximumModulationIndex();
@@ -45,6 +45,13 @@ class FOC
       static int getexp(float f);
       static s32fp sin;
       static s32fp cos;
+      /* F10/T5 dead-time compensation: sign of each phase's current (+1, -1, or
+       * 0 inside the deadband), captured by ParkClarke from its (il1, il2)
+       * arguments and consumed by InvParkClarke. phaseSign[i] lines up with
+       * DutyCycles[i] because the caller (ProcessCurrents) already resolves the
+       * SWAP_CURRENTS pinswap by choosing which measured current it passes as
+       * il1 vs il2 -- ParkClarke itself needs no pinswap awareness. */
+      static int8_t phaseSign[3];
 };
 
 #endif // FOC_H
