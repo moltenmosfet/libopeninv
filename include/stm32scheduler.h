@@ -47,6 +47,23 @@ class Stm32Scheduler
        */
       int GetCpuLoad();
 
+      /** @brief Return number of missed task deadlines resynced since boot
+       * @return overrun count
+       */
+      uint32_t GetOverrunCount();
+
+      /** @brief Check whether a channel's deadline was missed; resync and count it if so
+       * @param ccr current output-compare value for the channel
+       * @param counter current timer counter value
+       * @param period channel period in timer ticks
+       * @param newCcr set to counter + period when the deadline was missed
+       * @param overrunCount incremented when the deadline was missed
+       * @return true when the deadline was missed (ccr at or behind counter)
+       * @note pure function, public only so the host test suite can exercise
+       *       the resync decision without touching timer registers
+       */
+      static bool CheckOverrun(uint32_t ccr, uint32_t counter, uint16_t period, uint32_t& newCcr, uint32_t& overrunCount);
+
    protected:
    private:
       static const enum tim_oc_id ocMap[MAX_TASKS];
@@ -55,6 +72,7 @@ class Stm32Scheduler
       uint16_t execTicks[MAX_TASKS];
       uint32_t timer;
       int nextTask;
+      uint32_t overruns;
 };
 
 #endif // STM32SCHEDULER_H

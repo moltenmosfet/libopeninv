@@ -36,6 +36,7 @@ Stm32Scheduler::Stm32Scheduler(uint32_t timer)
    timer_set_period(timer, 0xFFFF);
 
    nextTask = 0;
+   overruns = 0;
 }
 
 void Stm32Scheduler::AddTask(void (*function)(void), uint16_t period)
@@ -74,6 +75,17 @@ void Stm32Scheduler::Run()
          TIM_CCR(timer, i) += periods[i];
          functions[i]();
          execTicks[i] = timer_get_counter(timer) - start;
+
+         /* Task took longer than its period: the just-advanced compare value
+          * already lies behind the counter. Left alone it would stall this
+          * channel until the 16-bit counter wraps back around (up to ~655 ms
+          * at 100 kHz) while PWM keeps running on stale references. */
+         uint32_t newCcr;
+         if (CheckOverrun(TIM_CCR(timer, i), timer_get_counter(timer), periods[i], newCcr, overruns))
+         {
+            TIM_CCR(timer, i) = newCcr;
+         }
+
          timer_clear_flag(timer, TIM_SR_CC1IF << i);
       }
       else if (i >= nextTask)
@@ -93,4 +105,20 @@ int Stm32Scheduler::GetCpuLoad()
       totalLoad += load;
    }
    return totalLoad;
+}
+
+uint32_t Stm32Scheduler::GetOverrunCount()
+{
+   return overruns;
+}
+
+bool Stm32Scheduler::CheckOverrun(uint32_t ccr, uint32_t counter, uint16_t period, uint32_t& newCcr, uint32_t& overrunCount)
+{
+   if ((int16_t)(ccr - counter) <= 0)
+   {
+      newCcr = counter + period;
+      overrunCount++;
+      return true;
+   }
+   return false;
 }
