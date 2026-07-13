@@ -431,18 +431,28 @@ void TerminalCommands::LoadParameters(Terminal* term, char *arg)
 {
    arg = arg;
 
-   cm_disable_interrupts();
-   int res = parm_load();
-   cm_enable_interrupts();
-
-   if (0 == res)
+   //LOAD ends in Param::Change(PARAM_LAST), reloading encmode/polepairs etc.;
+   //forbid it while running (same "not in RUN" gate as SAVE) so it cannot
+   //desync the field mid-run.
+   if (saveEnabled)
    {
-      Param::Change(Param::PARAM_LAST);
-      fprintf(term, "Parameters loaded\r\n");
+      cm_disable_interrupts();
+      int res = parm_load();
+      cm_enable_interrupts();
+
+      if (0 == res)
+      {
+         Param::Change(Param::PARAM_LAST);
+         fprintf(term, "Parameters loaded\r\n");
+      }
+      else
+      {
+         fprintf(term, "Parameter CRC error\r\n");
+      }
    }
    else
    {
-      fprintf(term, "Parameter CRC error\r\n");
+      fprintf(term, "Will not load parameters in run modes, please stop before loading!\r\n");
    }
 }
 
