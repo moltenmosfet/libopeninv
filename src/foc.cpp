@@ -103,7 +103,11 @@ void FOC::SetMotorParameters(float lqminusld, float fluxLinkage)
 
 int32_t FOC::GetQLimit(int32_t ud)
 {
-   return sqrt(modMaxPow2 - ud * ud);
+   // Clamp the radicand: if ud exceeds modMax (e.g. after modmax is lowered at
+   // runtime) the difference goes negative and the unsigned sqrt would read it
+   // as a huge uint32, yielding a garbage q-limit and overmodulation.
+   int32_t rad = modMaxPow2 - ud * ud;
+   return sqrt(MAX(0, rad));
 }
 
 /** \brief Returns the resulting modulation index from uq and ud
