@@ -34,11 +34,27 @@ static float term1 = 15, term2 = 240;
 static int32_t modMax = FP_DIV(FP_FROMINT(2U), sqrt3) - 200;
 static int32_t modMaxPow2 = modMax * modMax;
 
+/* F10/T5 dead-time compensation deadband. il1/il2 (ParkClarke's arguments) are
+ * the GLOBAL Q5-scaled s32fp (FRAC_DIGITS), not this file's local Q15
+ * CST_DIGITS override -- FP_FROMINT(2) here would wrongly yield 2<<15. Only
+ * sign() is taken of these currents, but the deadband compare needs the
+ * correct scale, so build it from FRAC_DIGITS explicitly. */
+static const int32_t dtCompDeadbandAmps = 2 << FRAC_DIGITS; // 2 A
+
 s32fp FOC::id;
 s32fp FOC::iq;
 s32fp FOC::DutyCycles[3];
 s32fp FOC::sin;
 s32fp FOC::cos;
+int8_t FOC::phaseSign[3];
+
+/* Sign of a Q5 phase current with a +-2 A deadband (0 = don't compensate). */
+static int8_t SignWithDeadband(s32fp iQ5)
+{
+   if (iQ5 > dtCompDeadbandAmps) return 1;
+   if (iQ5 < -dtCompDeadbandAmps) return -1;
+   return 0;
+}
 
 /** @brief Set angle for Park und inverse Park transformation
  *  @param angle uint16_t rotor angle
@@ -62,6 +78,14 @@ void FOC::ParkClarke(s32fp il1, s32fp il2)
    //Park transformation
    id = FP_MUL(cos, ia) + FP_MUL(sin, ib);
    iq = FP_MUL(cos, ib) - FP_MUL(sin, ia);
+
+   /* F10/T5: capture per-phase current signs for dead-time compensation.
+    * il3 = -il1-il2 (third phase is never measured, KCL). phaseSign[i] must
+    * line up with DutyCycles[i] in InvParkClarke -- see the pinswap note on
+    * the phaseSign declaration in foc.h. */
+   phaseSign[0] = SignWithDeadband(il1);
+   phaseSign[1] = SignWithDeadband(il2);
+   phaseSign[2] = SignWithDeadband(-il1 - il2);
 }
 
 /** \brief distribute motor current in magnetic torque and reluctance torque with the least total current
@@ -128,9 +152,12 @@ int32_t FOC::GetTotalVoltage(int32_t ud, int32_t uq)
  *
  * \param ud int32_t direct voltage
  * \param uq int32_t quadrature voltage
+ * \param dtcomp int32_t dead-time compensation magnitude, modulation digits
+ *        (F10/T5); added to a phase's duty when its current sign is positive,
+ *        subtracted when negative, 0 (default) leaves duties untouched
  *
  */
-void FOC::InvParkClarke(int32_t ud, int32_t uq)
+void FOC::InvParkClarke(int32_t ud, int32_t uq, int32_t dtcomp)
 {
    //Inverse Park transformation
    s32fp ua = FP_MUL(cos, ud) - FP_MUL(sin, uq);
@@ -150,6 +177,12 @@ void FOC::InvParkClarke(int32_t ud, int32_t uq)
       DutyCycles[i] -= offset;
       /* Shift above 0 */
       DutyCycles[i] += zeroOffset;
+      /* F10/T5 dead-time feedforward: +dtcomp when this phase's current is
+       * positive, -dtcomp when negative, no change inside the deadband
+       * (phaseSign==0) or when dtcomp==0 (feature off, param default). Must
+       * happen before short-pulse suppression below so a compensated duty
+       * can still fall into/out of the suppressed range. */
+      DutyCycles[i] += dtcomp * phaseSign[i];
       /* Short pulse suppression */
       if (DutyCycles[i] < minPulse)
       {
