@@ -86,22 +86,49 @@ void SdoCommands::ProcessStandardCommands(CanSdo::SdoFrame* sdoFrame)
          }
          break;
       case SDO_CMD_LOAD:
-         //We disable interrupts to prevent concurrent access of the CRC unit
-         cm_disable_interrupts();
-         parm_load();
-         cm_enable_interrupts();
-         Param::Change(Param::PARAM_LAST);
+         //LOAD ends in Param::Change(PARAM_LAST), reloading encmode/polepairs
+         //etc.; forbid it while running (same "not in RUN" gate as SAVE) so it
+         //cannot desync the field mid-run.
+         if (saveEnabled)
+         {
+            //We disable interrupts to prevent concurrent access of the CRC unit
+            cm_disable_interrupts();
+            parm_load();
+            cm_enable_interrupts();
+            Param::Change(Param::PARAM_LAST);
+         }
+         else
+         {
+            sdoFrame->cmd = SDO_ABORT;
+            sdoFrame->data = SDO_ERR_GENERAL;
+         }
          break;
       case SDO_CMD_RESET:
+         //RESET is unconditional by design: it lands in the bootloader's safe
+         //pin-init, so it is survivable while running.
          scb_reset_system();
          break;
       case SDO_CMD_DEFAULTS:
-         Param::LoadDefaults();
-         Param::Change(Param::PARAM_LAST);
+         //Same reasoning as LOAD: a full parameter apply must not run mid-run.
+         if (saveEnabled)
+         {
+            Param::LoadDefaults();
+            Param::Change(Param::PARAM_LAST);
+         }
+         else
+         {
+            sdoFrame->cmd = SDO_ABORT;
+            sdoFrame->data = SDO_ERR_GENERAL;
+         }
          break;
       case SDO_CMD_CLEAR_CAN:
          if (0 != canMap) canMap->Clear();
          break;
+      //Note: SDO_CMD_START / SDO_CMD_STOP are not handled here. Remote start is
+      //dispatched via user-space SDO (InverterSdo), which sets opmode directly:
+      //it bypasses the Ms10Task start interlocks (udcsw, brake-check, mprot) and
+      //does not close the DC contactor. Sequencing of a remote start is the
+      //caller's responsibility.
       default:
          sdoFrame->cmd = SDO_ABORT;
          sdoFrame->data = SDO_ERR_INVIDX;
