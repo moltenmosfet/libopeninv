@@ -25,14 +25,23 @@
 using namespace std;
 
 int _failedAssertions = 0;
-static int testIdx = 0;
-static list<UnitTest*> testList;
+
+//Construct-on-first-use: REGISTER_TEST runs during static initialization of
+//other translation units, whose order relative to this file is undefined --
+//a plain file-scope list here could silently lose registrations.
+static list<UnitTest*>& Tests()
+{
+   static list<UnitTest*> testList;
+   return testList;
+}
 
 int main()
 {
+   int testCasesRun = 0;
+
    cout << "Starting unit Tests" << endl;
 
-   for (UnitTest* currentTest: testList)
+   for (UnitTest* currentTest: Tests())
    {
       currentTest->TestSetup();
 
@@ -40,7 +49,18 @@ int main()
       {
          currentTest->TestCaseSetup();
          testCase();
+         testCasesRun++;
       }
+   }
+
+   //A build that registers nothing must not report success. This matters for
+   //the CAN_SIGNED=1 leg, whose ~23 signed-reception cases live behind a macro
+   //that must expand into the register list -- a silently-empty leg would
+   //otherwise "pass" while covering nothing.
+   if (testCasesRun == 0)
+   {
+      cout << "FAILED: no test cases were registered" << endl;
+      return -1;
    }
 
    if (_failedAssertions > 0)
@@ -49,7 +69,8 @@ int main()
       return -1;
    }
 
-   cout << "All tests passed" << endl;
+   cout << "All tests passed (" << testCasesRun << " cases in "
+        << Tests().size() << " suites)" << endl;
 
    return 0;
 }
@@ -57,5 +78,5 @@ int main()
 UnitTest::UnitTest(const list<VoidFunction>* cases)
 : _cases(cases)
 {
-   testList.push_back(this);
+   Tests().push_back(this);
 }
